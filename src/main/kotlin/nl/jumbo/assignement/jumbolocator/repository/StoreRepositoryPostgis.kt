@@ -31,152 +31,146 @@ class StoreRepositoryPostgis(
     override fun findNearestStores(
         coordinates: GeoCoordinates,
         limit: Int
-    ): Either<DomainError, List<StoreWithDistance>> {
-        return try {
-            val storesWithDistances = springDataRepository.findNearestStoresWithDistance(
-                coordinates.latitude,
-                coordinates.longitude,
-                limit
-            )
+    ): Either<DomainError, List<StoreWithDistance>> = runCatching {
+        springDataRepository.findNearestStoresWithDistance(
+            coordinates.latitude,
+            coordinates.longitude,
+            limit
+        ).map { projection ->
+            val distanceInKm = BigDecimal(projection.distance / 1000.0)
+                .setScale(2, RoundingMode.HALF_UP)
+                .toDouble()
 
-            val result = storesWithDistances.map { projection ->
-                val distanceInKm = BigDecimal(projection.distance / 1000.0)
-                    .setScale(2, RoundingMode.HALF_UP)
-                    .toDouble()
-
-                val entity = StoreEntity(
-                    id = projection.id,
-                    storeId = projection.storeId,
-                    city = projection.city,
-                    postalCode = projection.postalCode,
-                    street = projection.street,
-                    street2 = projection.street2,
-                    street3 = projection.street3,
-                    addressName = projection.addressName,
-                    longitude = projection.longitude,
-                    latitude = projection.latitude,
-                    location = geometryFactory.createPoint(Coordinate(projection.longitude, projection.latitude)),
-                    complexNumber = projection.complexNumber,
-                    showWarningMessage = projection.showWarningMessage,
-                    todayOpen = projection.todayOpen,
+            StoreWithDistance(
+                store = Store(
+                    id = projection.storeId,
+                    name = projection.addressName,
+                    address = Address(
+                        street = projection.street,
+                        street2 = projection.street2,
+                        street3 = projection.street3,
+                        city = projection.city,
+                        postalCode = projection.postalCode
+                    ),
+                    coordinates = GeoCoordinates(
+                        latitude = projection.latitude,
+                        longitude = projection.longitude
+                    ),
+                    openingHours = OpeningHours(
+                        open = projection.todayOpen,
+                        close = projection.todayClose
+                    ),
                     locationType = projection.locationType,
-                    collectionPoint = projection.collectionPoint,
-                    sapStoreID = projection.sapStoreID,
-                    todayClose = projection.todayClose,
-                    uuid = projection.uuid
-                )
-
-                StoreWithDistance(
-                    store = mapEntityToDomain(entity),
-                    distanceInKm = distanceInKm,
-                    distanceInMeters = projection.distance.toInt()
-                )
-            }
-
-            result.right()
-        } catch (e: Exception) {
+                    isCollectionPoint = projection.collectionPoint
+                ),
+                distanceInKm = distanceInKm,
+                distanceInMeters = projection.distance.toInt()
+            )
+        }
+    }.fold(
+        onSuccess = { it.right() },
+        onFailure = { e ->
             logger.error("Error finding nearest stores", e)
             DomainError.DataAccessError(
                 message = "Failed to retrieve stores from database: ${e.message}",
                 cause = e
             ).left()
         }
-    }
+    )
 
-    override fun findById(id: Long): Either<DomainError, Store> {
-        return try {
-            val entity = springDataRepository.findByStoreId(id)
-                ?: return DomainError.ResourceNotFound(
-                    message = "Store not found",
+    override fun findById(id: Long): Either<DomainError, Store> = runCatching {
+        springDataRepository.findByStoreId(id)?.let { mapEntityToDomain(it) }
+            ?: throw NoSuchElementException("Store with ID $id not found")
+    }.fold(
+        onSuccess = { it.right() },
+        onFailure = { e ->
+            when (e) {
+                is NoSuchElementException -> DomainError.ResourceNotFound(
+                    message = e.message ?: "Store not found",
                     resourceType = "Store",
                     identifier = id.toString()
                 ).left()
-
-            mapEntityToDomain(entity).right()
-        } catch (e: Exception) {
-            logger.error("Error finding store by id $id", e)
-            DomainError.DataAccessError(
-                message = "Failed to retrieve store from database",
-                cause = e
-            ).left()
+                else -> {
+                    logger.error("Error finding store by id $id", e)
+                    DomainError.DataAccessError(
+                        message = "Failed to retrieve store from database",
+                        cause = e
+                    ).left()
+                }
+            }
         }
-    }
+    )
 
     @Transactional
-    override fun saveAll(stores: List<Store>): Either<DomainError, List<Store>> {
-        return try {
-            val entities = stores.map { mapDomainToEntity(it) }
-            val savedEntities = springDataRepository.saveAll(entities)
-            savedEntities.map { mapEntityToDomain(it) }.right()
-        } catch (e: Exception) {
+    override fun saveAll(stores: List<Store>): Either<DomainError, List<Store>> = runCatching {
+        springDataRepository.saveAll(stores.map { mapDomainToEntity(it) })
+            .map { mapEntityToDomain(it) }
+    }.fold(
+        onSuccess = { it.right() },
+        onFailure = { e ->
             logger.error("Error saving stores", e)
             DomainError.DataAccessError(
                 message = "Failed to save stores to database",
                 cause = e
             ).left()
         }
-    }
+    )
 
-    override fun count(): Either<DomainError, Long> {
-        return try {
-            springDataRepository.count().right()
-        } catch (e: Exception) {
+    override fun count(): Either<DomainError, Long> = runCatching {
+        springDataRepository.count()
+    }.fold(
+        onSuccess = { it.right() },
+        onFailure = { e ->
             logger.error("Error counting stores", e)
             DomainError.DataAccessError(
                 message = "Failed to count stores in database",
                 cause = e
             ).left()
         }
-    }
+    )
 
-    private fun mapEntityToDomain(entity: StoreEntity): Store {
-        return Store(
-            id = entity.storeId,
-            name = entity.addressName,
-            address = Address(
-                street = entity.street,
-                street2 = entity.street2,
-                street3 = entity.street3,
-                city = entity.city,
-                postalCode = entity.postalCode
-            ),
-            coordinates = GeoCoordinates(
-                latitude = entity.latitude,
-                longitude = entity.longitude
-            ),
-            openingHours = OpeningHours(
-                open = entity.todayOpen,
-                close = entity.todayClose
-            ),
-            locationType = entity.locationType,
-            isCollectionPoint = entity.collectionPoint
-        )
-    }
+    private fun mapEntityToDomain(entity: StoreEntity): Store = Store(
+        id = entity.storeId,
+        name = entity.addressName,
+        address = Address(
+            street = entity.street,
+            street2 = entity.street2,
+            street3 = entity.street3,
+            city = entity.city,
+            postalCode = entity.postalCode
+        ),
+        coordinates = GeoCoordinates(
+            latitude = entity.latitude,
+            longitude = entity.longitude
+        ),
+        openingHours = OpeningHours(
+            open = entity.todayOpen,
+            close = entity.todayClose
+        ),
+        locationType = entity.locationType,
+        isCollectionPoint = entity.collectionPoint
+    )
 
-    private fun mapDomainToEntity(domain: Store): StoreEntity {
-        val point = geometryFactory.createPoint(
+    private fun mapDomainToEntity(domain: Store): StoreEntity = StoreEntity(
+        storeId = domain.id,
+        addressName = domain.name,
+        street = domain.address.street,
+        street2 = domain.address.street2,
+        street3 = domain.address.street3,
+        city = domain.address.city,
+        postalCode = domain.address.postalCode,
+        latitude = domain.coordinates.latitude,
+        longitude = domain.coordinates.longitude,
+        location = geometryFactory.createPoint(
             Coordinate(domain.coordinates.longitude, domain.coordinates.latitude)
-        )
-
-        return StoreEntity(
-            storeId = domain.id,
-            addressName = domain.name,
-            street = domain.address.street,
-            street2 = domain.address.street2,
-            street3 = domain.address.street3,
-            city = domain.address.city,
-            postalCode = domain.address.postalCode,
-            latitude = domain.coordinates.latitude,
-            longitude = domain.coordinates.longitude,
-            location = point,
-            todayOpen = domain.openingHours.open,
-            todayClose = domain.openingHours.close,
-            locationType = domain.locationType,
-            collectionPoint = domain.isCollectionPoint,
-            complexNumber = domain.id.toString(),
-            showWarningMessage = false,
-            sapStoreID = domain.id.toString(),
-            uuid = UUID.randomUUID().toString()
-        )
-    }
+        ),
+        todayOpen = domain.openingHours.open,
+        todayClose = domain.openingHours.close,
+        locationType = domain.locationType,
+        collectionPoint = domain.isCollectionPoint,
+        complexNumber = domain.id.toString(),
+        showWarningMessage = false,
+        sapStoreID = domain.id.toString(),
+        uuid = UUID.randomUUID().toString()
+    )
 }
