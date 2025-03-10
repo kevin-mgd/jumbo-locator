@@ -75,7 +75,6 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should return stores with distance")
         fun findNearestStoresSuccess() {
-            // Given
             val limit = 5
             val distance = 2500.0
 
@@ -89,10 +88,8 @@ class StoreRepositoryPostgisTest {
                 )
             } returns listOf(projection)
 
-            // When
             val result = storeRepository.findNearestStores(testCoordinates, limit)
 
-            // Then
             assertTrue(result.isRight())
             result.map { storesWithDistance ->
                 assertEquals(1, storesWithDistance.size)
@@ -117,7 +114,6 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should handle repository exceptions")
         fun handleRepositoryExceptions() {
-            // Given
             val limit = 5
 
             every {
@@ -128,10 +124,8 @@ class StoreRepositoryPostgisTest {
                 )
             } throws RuntimeException("Database error")
 
-            // When
             val result = storeRepository.findNearestStores(testCoordinates, limit)
 
-            // Then
             assertTrue(result.isLeft())
             result.mapLeft { error ->
                 assertTrue(error.message.contains("Failed to retrieve stores from database"))
@@ -146,15 +140,12 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should return store when found")
         fun findByIdSuccess() {
-            // Given
             val storeId = 1001L
 
             every { springDataRepository.findByStoreId(storeId) } returns testStoreEntity
 
-            // When
             val result = storeRepository.findById(storeId)
 
-            // Then
             assertTrue(result.isRight())
             result.map { store ->
                 assertEquals(testStoreEntity.storeId, store.id)
@@ -168,18 +159,15 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should return not found error when store doesn't exist")
         fun handleStoreNotFound() {
-            // Given
             val storeId = 999L
 
             every { springDataRepository.findByStoreId(storeId) } returns null
 
-            // When
             val result = storeRepository.findById(storeId)
 
-            // Then
             assertTrue(result.isLeft())
             result.mapLeft { error ->
-                assertTrue(error.message.contains("Store not found"))
+                assertTrue(error.message.contains("Store with ID $storeId not found"))
             }
 
             verify(exactly = 1) { springDataRepository.findByStoreId(storeId) }
@@ -188,15 +176,12 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should handle exceptions")
         fun handleExceptions() {
-            // Given
             val storeId = 1001L
 
             every { springDataRepository.findByStoreId(storeId) } throws RuntimeException("Database error")
 
-            // When
             val result = storeRepository.findById(storeId)
 
-            // Then
             assertTrue(result.isLeft())
             result.mapLeft { error ->
                 assertTrue(error.message.contains("Failed to retrieve store from database"))
@@ -211,16 +196,13 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should save stores")
         fun saveAllSuccess() {
-            // Given
             val store = mapEntityToDomain(testStoreEntity)
             val stores = listOf(store)
 
             every { springDataRepository.saveAll(any<List<StoreEntity>>()) } returns listOf(testStoreEntity)
 
-            // When
             val result = storeRepository.saveAll(stores)
 
-            // Then
             assertTrue(result.isRight())
             result.map { savedStores ->
                 assertEquals(1, savedStores.size)
@@ -233,16 +215,13 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should handle exceptions")
         fun handleExceptions() {
-            // Given
             val store = mapEntityToDomain(testStoreEntity)
             val stores = listOf(store)
 
             every { springDataRepository.saveAll(any<List<StoreEntity>>()) } throws RuntimeException("Database error")
 
-            // When
             val result = storeRepository.saveAll(stores)
 
-            // Then
             assertTrue(result.isLeft())
             result.mapLeft { error ->
                 assertTrue(error.message.contains("Failed to save stores to database"))
@@ -257,15 +236,12 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should return store count")
         fun countSuccess() {
-            // Given
             val count = 42L
 
             every { springDataRepository.count() } returns count
 
-            // When
             val result = storeRepository.count()
 
-            // Then
             assertTrue(result.isRight())
             result.map { actualCount ->
                 assertEquals(count, actualCount)
@@ -277,13 +253,10 @@ class StoreRepositoryPostgisTest {
         @Test
         @DisplayName("Should handle exceptions")
         fun handleExceptions() {
-            // Given
             every { springDataRepository.count() } throws RuntimeException("Database error")
 
-            // When
             val result = storeRepository.count()
 
-            // Then
             assertTrue(result.isLeft())
             result.mapLeft { error ->
                 assertTrue(error.message.contains("Failed to count stores in database"))
